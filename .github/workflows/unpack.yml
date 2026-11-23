@@ -1,29 +1,71 @@
-name: Unpack Android project
+name: Build Simple VLESS APK
+
 on:
   workflow_dispatch:
   push:
     paths:
       - 'Simple-VLESS-project.zip'
       - '.github/workflows/unpack.yml'
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
-  unpack:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-      - name: Extract project archive
+
+      - name: Extract project
         run: |
-          test -f Simple-VLESS-project.zip
-          mkdir -p /tmp/simple-vless
-          unzip -o Simple-VLESS-project.zip -d /tmp/simple-vless
-          cp -a /tmp/simple-vless/. .
-          rm -f Simple-VLESS-project.zip
-      - name: Commit extracted project
+          mkdir -p "$RUNNER_TEMP/simple-vless"
+          unzip -q Simple-VLESS-project.zip -d "$RUNNER_TEMP/simple-vless"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: sdkmanager "ndk;27.2.12479018" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build libXray
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'Extract Simple VLESS Android project' || echo 'No changes'
-          git push
+          git clone --depth 1 https://github.com/XTLS/libXray.git "$RUNNER_TEMP/libXray"
+          cd "$RUNNER_TEMP/libXray"
+          python3 build/main.py android
+          AAR="$(find . -type f -name 'libXray.aar' -print -quit)"
+          if [ -z "$AAR" ]; then
+            echo "libXray.aar was not produced"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/simple-vless/app/libs"
+          cp "$AAR" "$RUNNER_TEMP/simple-vless/app/libs/libXray.aar"
+
+      - name: Build APK
+        working-directory: ${{ runner.temp }}/simple-vless
+        run: |
+          gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Simple-VLESS-debug-apk
+          path: ${{ runner.temp }}/simple-vless/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
