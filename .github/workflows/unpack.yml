@@ -1,0 +1,29 @@
+name: Unpack Android project
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Simple-VLESS-project.zip'
+      - '.github/workflows/unpack.yml'
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Extract project archive
+        run: |
+          test -f Simple-VLESS-project.zip
+          mkdir -p /tmp/simple-vless
+          unzip -o Simple-VLESS-project.zip -d /tmp/simple-vless
+          cp -a /tmp/simple-vless/. .
+          rm -f Simple-VLESS-project.zip
+      - name: Commit extracted project
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Extract Simple VLESS Android project' || echo 'No changes'
+          git push
